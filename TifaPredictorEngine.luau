@@ -1072,6 +1072,588 @@ function Engine.Inventory()
     return result
 end
 
+-- Explorer uses the reference's seeded offset scan and filter matching.
+do
+local StatModifiers = require(game:GetService("ReplicatedStorage").StatModifiers)
+local t6 = {}
+local v22 = function(p6, p7, p8, p9)
+		local v43 = (p6 and "H_" or "S_") .. tostring(p7) .. "_" .. tostring(p8 or "Add")
+
+		if p9 then
+			for k, v in pairs(p9) do
+				v43 ..= "_" .. tostring(k) .. "_" .. tostring(v)
+			end
+		end
+
+		return v43
+	end
+local v23 = function(p10, p11, p12)
+		local v46 = t6[p10]
+
+		if not v46 then
+			return "Unknown Stat", "Unknown"
+		end
+
+		local v47 = v46.readable:lower()
+		local v48 = v46.op == "Mul"
+
+		v48 = v48 and "x" or "+"
+
+		local v49 = v46.isPct and "%" or ""
+		local v50 = v46.isHive and "[hive bonus] "
+
+		v50 = v50 or ""
+
+		local function v51(p13)
+			if not v46.isPct then
+				return tostring(math.floor(p13 * 1000 + 0.5) / 1000)
+			end
+
+			local v52 = math.floor(p13 * 100 * 1000 + 0.5) / 1000
+
+			if not v46.isHive then
+				return tostring(math.floor(v52 + 0.5))
+			end
+
+			if v52 % 1 == 0 then
+				return tostring(math.floor(v52 + 0.5))
+			end
+
+			return string.format("%.1f", v52)
+		end
+
+		local v53 = p11 - p12
+
+		if v46.mulBee then
+			p11 -= 1
+			v53 -= 1
+		end
+
+		local v54 = v51(p11)
+		local v55 = v51(v53)
+		local v56 = v51(p12)
+
+		if v46.isPct and not v46.isHive then
+			v56 = tostring(tonumber(v54) - tonumber(v55))
+		end
+
+		local v57
+
+		if p12 > 0.0001 or p12 < -0.0001 then
+			v57 = v50 .. v48 .. v54 .. v49 .. " " .. v47 .. " (" .. v55 .. "+" .. v56 .. ")"
+		else
+			v57 = v50 .. v48 .. v54 .. v49 .. " " .. v47
+		end
+
+		return v57, v46.disp
+	end
+local v24 = function(p14)
+		local ability = string.sub(p14, 3)
+
+		return "+ " .. ability:lower(), "Ability: " .. ability
+	end
+	local function v151(p24)
+		local ok, result = pcall(function()
+			return BeeStatMods.GetType(p24).Op == "Mul"
+		end)
+		local v154 = ok and result == true
+
+		return v154
+	end
+
+local v120 = function(p25, p26)
+		local HiveBonusStat = p26 and p25.HiveBonusStat
+
+		HiveBonusStat = HiveBonusStat or p25.BeeStat
+
+		local Op = p25.Op or "Add"
+		local v157, v158 = pcall(function()
+			if p26 then
+				return StatModifiers.Description({
+					Type = HiveBonusStat,
+					Value = 1,
+					Params = p25.Params,
+					Op = Op
+				})
+			end
+
+			return BeeStatMods.GetType(HiveBonusStat).Desc({
+				Stat = HiveBonusStat,
+				Value = 1,
+				Params = p25.Params,
+				Op = Op
+			})
+		end)
+		local v159 = HiveBonusStat
+		local v160 = false
+
+		if v157 and v158 then
+			v160 = string.find(v158, "%%") ~= nil
+			v159 = string.match(string.gsub(string.gsub(string.gsub(v158, "%[Hive Bonus%]%s*", ""), "^[%+xX%-]?%s*%d*%.?%d*[%+xX%-%%]?%s*", ""), "%s*%([%d%+%-%.]+%)$", ""), "^%s*(.-)%s*$")
+		end
+
+		local v161 = v22(p26, HiveBonusStat, Op, p25.Params)
+		local v162 = (v160 and "% " or "") .. v159 .. (Op == "Mul" and " (x)" or " (+)")
+
+		if p26 then
+			v162 = "[HIVE] " .. v162
+		end
+
+		if not t6[v161] then
+			t6[v161] = {
+				isHive = p26,
+				op = Op,
+				mulBee = not p26 and v151(HiveBonusStat),
+				readable = v159,
+				isPct = v160,
+				disp = v162
+			}
+		end
+
+		return v161, v162
+	end
+	local function v227(p36, p37)
+		local v228 = false
+
+		for i = 1, #p36 do
+			if p36[i][1] == p37 then
+				v228 = true
+
+				break
+			end
+		end
+
+		if not v228 then
+			return p36
+		end
+
+		local t27 = {}
+
+		for i = 1, #p36 do
+			if p36[i][1] ~= p37 then
+				t27[#t27 + 1] = p36[i]
+			end
+		end
+
+		return t27
+	end
+
+function Engine.ReferenceExplore(p79, p80, p81, p82, filters, options)
+    local t92, p83 = {}, {}
+    options = options or {}
+    local definition = assert(BeequipTypes.Get(p79.T), "Unknown Beequip")
+    for _, upgrade in ipairs(definition.Upgrades or {}) do
+        if upgrade.HiveBonusStat or upgrade.BeeStat then
+            v120(upgrade, upgrade.HiveBonusStat ~= nil)
+        end
+    end    for _, target in ipairs(filters) do
+        local key
+        if target.kind == "Ability" then
+            key = "A_" .. target.name
+        elseif target.kind == "Hive" then
+            key = v120({HiveBonusStat=target.name, Op=target.op, Params=target.params}, true)
+        else
+            key = v120({BeeStat=target.name}, false)
+        end
+        p83[#p83 + 1] = {key=key}
+    end
+
+	local Get = assert(BeequipTypes.Get(p79.T), "Unknown Beequip")
+	local S
+
+	if p82 then
+		S = p79.S or p79.OS
+	else
+		S = p79.OS or p79.S
+	end
+
+	local Q = p79.Q or 0
+	local RC = p79.RC or 0
+	local OldRNG = Get.OldRNG
+	local t93 = {}
+	local v544 = #p83 > 0
+
+	for _, v in ipairs(p83) do
+		t93[v.key] = true
+	end
+
+	local v547 = Random.new(S)
+
+	local function v548()
+		return v547:NextNumber()
+	end
+
+	local t94 = {}
+	local t95 = {}
+	local t96 = {}
+	local t97 = {}
+	local t98 = {}
+
+	local function v554(p86)
+		local v555 = t94[p86]
+
+		if not v555 then
+			v555 = #t95 + 1
+			t94[p86] = v555
+			t95[v555] = p86
+			t96[v555] = 0
+		end
+
+		return v555
+	end
+
+	if Get.Modifiers then
+		for _, modifier in ipairs(Get.Modifiers) do
+			local v558 = RQValue.Resolve(modifier, Q, v548, OldRNG)
+
+			if v558 then
+				local v559 = v554(v22(false, modifier.Stat, modifier.Op, modifier.Params))
+
+				t96[v559] += v558
+				t97[v559] = true
+			end
+		end
+	end
+
+	if Get.HiveBonuses then
+		for _, hiveBonuse in ipairs(Get.HiveBonuses) do
+			local v562 = RQValue.Resolve(hiveBonuse, Q, v548, OldRNG)
+
+			if v562 then
+				local v563 = v554(v22(true, hiveBonuse.Type, hiveBonuse.Op, hiveBonuse.Params))
+
+				t96[v563] += v562
+				t97[v563] = true
+			end
+		end
+	end
+
+	local t99 = {}
+	local n33 = 0
+	local n34 = 0
+
+	local function v567()
+		n34 += 1
+
+		local v568 = t99[n34]
+
+		if v568 == nil then
+			local v569 = n34 + 256
+
+			for i = n33 + 1, v569 do
+				t99[i] = v547:NextNumber()
+			end
+
+			n33 = v569
+			v568 = t99[n34]
+		end
+
+		return v568
+	end
+	local function v571(p87, p88)
+		n34 = p88
+
+		if Get.Abilities then
+			for _, ability in ipairs(Get.Abilities) do
+				local NamePool = ability.NamePool and RandomPools.SelectFromOrderedList(ability.NamePool, v567) or ability.Name
+
+				if NamePool then
+					p87["A_" .. NamePool] = true
+				end
+			end
+		end
+	end
+
+	local t100 = {}
+
+	v571(t100, RC)
+
+	local Upgrades = Get.Upgrades or {}
+	local v577 = #Upgrades
+	local t101 = {}
+	local t102 = {}
+	local t103 = {}
+	local t104 = {}
+	local t105 = {}
+	local t106 = {}
+	local t107 = {}
+	local t108 = {}
+	local v586 = false
+
+	for i, Upgrade in ipairs(Upgrades) do
+		local v589 = tostring(Upgrade)
+
+		t101[v589] = i
+		t102[i] = v589
+		t103[i] = Upgrade
+		t104[i] = Upgrade.Max
+
+		local n35 = 0
+
+		RQValue.Resolve(Upgrade.Chance, Q, function()
+			n35 += 1
+
+			return 0.5
+		end, OldRNG)
+
+		if n35 > 0 then
+			v586 = true
+		end
+
+		if Upgrade.BeeAbilityPool then
+			t107[i] = Upgrade.BeeAbilityPool
+			t108[#t108 + 1] = i
+		elseif Upgrade.BeeAbility then
+			t106[i] = "A_" .. Upgrade.BeeAbility
+		else
+			local v591 = Upgrade.HiveBonusStat ~= nil
+			local HiveBonusStat = v591 and Upgrade.HiveBonusStat or Upgrade.BeeStat
+
+			if HiveBonusStat then
+				t105[i] = v554(v22(v591, HiveBonusStat, Upgrade.Op, Upgrade.Params))
+
+				if not v591 and v151(HiveBonusStat) then
+					t98[t105[i]] = true
+				end
+			end
+		end
+	end
+
+	for k in pairs(t98) do
+		if not t97[k] then
+			t96[k] = 1
+		end
+	end
+
+	local t109 = {}
+	local t110 = {}
+
+	for i = 1, v577 do
+		local v597 = t105[i]
+
+		if v597 and not t109[v597] then
+			t109[v597] = true
+			t110[#t110 + 1] = v597
+		end
+	end
+
+	local t111 = {}
+
+	for _, v in ipairs(t110) do
+		t111[v] = not v544 or t93[t95[v]] == true
+	end
+
+	local function v601(p89)
+		local t112 = {}
+		local t113 = {}
+
+		for i = 1, v577 do
+			local v605 = t103[i]
+			local v606 = RQValue.Resolve(v605.Chance, Q, p89, OldRNG) or 0
+
+			if not v605.CausticOnly then
+				t112[#t112 + 1] = {
+					t102[i],
+					v606
+				}
+			end
+
+			t113[#t113 + 1] = {
+				t102[i],
+				v606
+			}
+		end
+
+		return t112, t113
+	end
+
+	local v607
+	local v608
+
+	if not v586 then
+		v607, v608 = v601(function()
+			return 0.5
+		end)
+	end
+
+	local v609 = WaxTypes.Get(p81:gsub("Wax$", ""))
+	local Upgrades2 = v609.Upgrades or 0
+	local v611 = v609.Name == "Caustic" or v609.Name == "Debug"
+	local t114 = {}
+
+	local function v613(p90, p91)
+		local v614 = t114[p90]
+
+		if not v614 then
+			v614 = {}
+			t114[p90] = v614
+		end
+
+		local v615 = math.floor(p91 * 1000000 + 0.5)
+		local v616 = v614[v615]
+
+		if not v616 then
+			v616 = v23(t95[p90], t96[p90] + p91, p91)
+			v614[v615] = v616
+		end
+
+		return v616
+	end
+
+	local t115 = {}
+
+	local function v618(p92)
+		local v619 = t115[p92]
+
+		if not v619 then
+			v619 = v24(p92)
+			t115[p92] = v619
+		end
+
+		return v619
+	end
+
+	local t116 = {}
+	local t117 = {}
+
+	for i = 1, v577 do
+		t116[i] = 0
+	end
+
+	for _, v in ipairs(t110) do
+		t117[v] = 0
+	end
+
+	local t118 = {}
+	local now = os.clock()
+
+	for i = 0, p80 do
+		if options.Cancelled and options.Cancelled() then error("Prediction cancelled", 0) end
+
+		local t119 = {}
+
+		v571(t119, i)
+
+		local v629, v630
+
+		if v586 then
+			v629, v630 = v601(v567)
+		else
+			v629 = v607
+			v630 = v608
+		end
+
+		n34 += 1
+
+		local n36 = 0
+
+		for i2 = 1, Upgrades2 do
+			local v633 = RandomPools.SelectFromOrderedList(v611 and v630 or v629, v567)
+
+			if v633 then
+				local v634 = t101[v633]
+				local v635 = t103[v634]
+				local n37 = 0
+
+				if v635.Value ~= nil then
+					n37 = RQValue.Resolve(v635.Value, Q, v567, OldRNG) or 0
+				end
+
+				if t116[v634] == 0 then
+					n36 += 1
+					t118[n36] = v634
+				end
+
+				t116[v634] += 1
+
+				local v637 = t105[v634]
+
+				if v637 then
+					t117[v637] += n37
+				end
+
+				local v638 = t104[v634]
+
+				if v638 and v638 <= t116[v634] then
+					v629 = v227(v629, v633)
+					v630 = v227(v630, v633)
+				end
+			end
+		end
+
+		for i2 = 1, n36 do
+			local v640 = t106[t118[i2]]
+
+			if v640 then
+				t119[v640] = true
+			end
+		end
+
+		for _, v in ipairs(t108) do
+			if t116[v] > 0 then
+				local v643 = RandomPools.SelectFromOrderedList(t107[v], v567)
+
+				if v643 then
+					t119["A_" .. v643] = true
+				end
+			end
+		end
+
+		local v644 = not v544
+		local t120 = {}
+
+		for _, v in ipairs(t110) do
+			if t111[v] then
+				local v648 = t117[v]
+
+				if v648 > 0.0001 then
+					v644 = true
+					t120[#t120 + 1] = v613(v, v648)
+				elseif v648 < -0.0001 then
+					t120[#t120 + 1] = v613(v, v648)
+				end
+			end
+		end
+
+		for k in pairs(t119) do
+			if not t100[k] and (not v544 or t93[k]) then
+				v644 = true
+				t120[#t120 + 1] = v618(k)
+			end
+		end
+
+		if v644 and #t120 > 0 then
+			t92[#t92 + 1] = {
+				offset = i + 1,
+				rc = i,
+				upgrades = t120
+			}
+		end
+
+		for i2 = 1, n36 do
+			local v651 = t118[i2]
+
+			t116[v651] = 0
+
+			local v652 = t105[v651]
+
+			if v652 then
+				t117[v652] = 0
+			end
+		end
+
+                if options.OnProgress and (i % 256 == 0 or i == p80) then
+                    options.OnProgress(i + 1, p80 + 1)
+                end
+                if os.clock() - now > 0.05 then
+                    task.wait()
+                    now = os.clock()
+                end
+            end
+    return t92
+end
+end
+
 -- Direct execution installs the core; this file contains no remote loadstring.
 getgenv().TifaPredictorEngine = Engine
 return Engine
